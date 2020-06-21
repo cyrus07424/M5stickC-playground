@@ -5,7 +5,6 @@
 #include "SHT20.h"
 #include <Adafruit_BMP280.h>
 #include "yunBoard.h"
-#include <math.h>
 #include "display.h"
 #include "Ambient.h"
 
@@ -18,25 +17,8 @@ Adafruit_BMP280 bmp;
 // 明るさ(別ファイルでextern変数として使用するためグローバル変数として定義)
 uint16_t light;
 
-// LEDの値
-extern uint8_t lightR;
-extern uint8_t lightG;
-extern uint8_t lightB;
-
-// LEDの点灯フラグ
-uint8_t light_flag = 0;
-
 // Wifiクライアント
 WiFiClient wifiClient;
-
-// Wifiステータス
-int wifiStatus = WL_IDLE_STATUS;
-
-// Wifi SSID
-const char* ssid = "CHANGEME";
-
-// Wifi パスワード
-const char* password = "CHANGEME";
 
 // Ambient
 Ambient ambient;
@@ -152,14 +134,9 @@ void loop() {
 */
 void sendAmbient(float tmp, float hum, float pressure, uint16_t light) {
   // Wifi接続確認
-  int count = 0;
-  while (wifiStatus != WL_CONNECTED && count < 10) {
-    count++;
-    Serial.println("connecting Wifi...");
-
-    // Wifi接続
-    wifiStatus = WiFi.begin(ssid, password);
-    delay(1000);
+  while (WiFi.status() != WL_CONNECTED) {
+    // Wifiに接続
+    connectWifi();
   }
 
   // Ambientにデータを送信.
@@ -177,4 +154,65 @@ void sendAmbient(float tmp, float hum, float pressure, uint16_t light) {
   M5.Lcd.setCursor(3, 3);
   M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
   M5.Lcd.print("!");
+}
+
+/**
+   Wifiに接続.
+*/
+void connectWifi() {
+  int count;
+
+  // 前回接続時情報で接続する
+  Serial.println("WiFi begin");
+  WiFi.begin();
+  count = 0;
+  while (WiFi.status() != WL_CONNECTED) {
+    count++;
+    Serial.print(".");
+    delay(500);
+    if (10 < count) {
+      break;
+    }
+  }
+  Serial.println("");
+
+  // 未接続の場合にはSmartConfig待受
+  if (WiFi.status() != WL_CONNECTED) {
+    WiFi.mode(WIFI_STA);
+    WiFi.beginSmartConfig();
+
+    Serial.println("Waiting for SmartConfig");
+    count = 0;
+    while (!WiFi.smartConfigDone()) {
+      count++;
+      delay(1000);
+      Serial.print("#");
+      // 30秒以上接続できなかったら抜ける
+      if (30 < count) {
+        Serial.println("");
+        Serial.println("Reset");
+        ESP.restart();
+      }
+    }
+
+    // Wifi接続
+    Serial.println("");
+    Serial.println("Waiting for WiFi");
+    count = 0;
+    while (WiFi.status() != WL_CONNECTED) {
+      count++;
+      delay(1000);
+      Serial.print(".");
+      // 60秒以上接続できなかったら抜ける
+      if (60 < count) {
+        Serial.println("");
+        Serial.println("Reset");
+        ESP.restart();
+      }
+    }
+    Serial.println("");
+    Serial.println("WiFi Connected.");
+  }
+  Serial.print("IP Address: ");
+  Serial.println(WiFi.localIP());
 }
