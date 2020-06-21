@@ -27,7 +27,10 @@ extern uint8_t lightB;
 uint8_t light_flag = 0;
 
 // Wifiクライアント
-WiFiClient client;
+WiFiClient wifiClient;
+
+// Wifiステータス
+int wifiStatus = WL_IDLE_STATUS;
 
 // Wifi SSID
 const char* ssid = "CHANGEME";
@@ -73,17 +76,11 @@ void setup() {
                   Adafruit_BMP280::FILTER_X16,      /* Filtering. */
                   Adafruit_BMP280::STANDBY_MS_1000); /* Standby time. */
 
-  // Wifi APに接続
-  WiFi.begin(ssid, password);
-  while (WiFi.status() != WL_CONNECTED) {
-    delay(500);
-    Serial.print(".");
-  }
-  Serial.print("WiFi connected\r\nIP address: ");
-  Serial.println(WiFi.localIP());
+  // LEDによって温度が変化するためLEDを消灯
+  led_off();
 
   // チャネルIDとライトキーを指定してAmbientの初期化
-  ambient.begin(channelId, writeKey, &client);
+  ambient.begin(channelId, writeKey, &wifiClient);
 }
 
 void loop() {
@@ -126,17 +123,6 @@ void loop() {
 
     // 明るさによって画面を描画
     display_light();
-    if (1500 < light) {
-      if (light_flag == 0) {
-        light_flag = 1;
-        lightR = 40;
-        lightG = 40;
-      }
-      led_breath();
-    } else {
-      led_off();
-      light_flag = 0;
-    }
 
     // 次回の実行時間(Ambient)に達している場合
     if (ambient_update_time < millis()) {
@@ -144,16 +130,7 @@ void loop() {
       ambient_update_time = millis() + (60 * 1000);
 
       // Ambientにデータを送信
-      ambient.set(1, tmp);
-      ambient.set(2, hum);
-      ambient.set(3, light);
-      ambient.set(4, pressure);
-      ambient.send();
-
-      // debug
-      M5.Lcd.setCursor(3, 3);
-      M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
-      M5.Lcd.print("!");
+      sendAmbient(tmp, hum, pressure, light);
     }
   }
 
@@ -168,4 +145,36 @@ void loop() {
 
   // ウエイト
   delay(10);
+}
+
+/**
+    Ambientにデータを送信.
+*/
+void sendAmbient(float tmp, float hum, float pressure, uint16_t light) {
+  // Wifi接続確認
+  int count = 0;
+  while (wifiStatus != WL_CONNECTED && count < 10) {
+    count++;
+    Serial.println("connecting Wifi...");
+
+    // Wifi接続
+    wifiStatus = WiFi.begin(ssid, password);
+    delay(1000);
+  }
+
+  // Ambientにデータを送信.
+  ambient.set(1, tmp);
+  ambient.set(2, hum);
+  ambient.set(3, light);
+  ambient.set(4, pressure);
+  if (ambient.send()) {
+    Serial.println("Ambient::send() success");
+  } else {
+    Serial.println("Ambient::send() failure");
+  }
+
+  // debug
+  M5.Lcd.setCursor(3, 3);
+  M5.Lcd.setTextColor(TFT_WHITE, TFT_BLACK);
+  M5.Lcd.print("!");
 }
